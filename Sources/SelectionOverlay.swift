@@ -21,6 +21,9 @@ final class SelectionOverlayController {
 
     private var windows: [OverlayWindow] = []
     private let completion: (SelectionResult?) -> Void
+    private var finished = false
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
 
     init(mode: SelectionMode, completion: @escaping (SelectionResult?) -> Void) {
         self.completion = completion
@@ -31,18 +34,56 @@ final class SelectionOverlayController {
             windows.append(win)
             win.orderFrontRegardless()
         }
-        // Key window = the one under the mouse, so Esc lands somewhere useful.
+        // Key window = the one under the mouse, so keystrokes land somewhere useful.
         let mouse = NSEvent.mouseLocation
         let target = windows.first { $0.screen?.frame.contains(mouse) ?? false } ?? windows.first
         NSApp.activate(ignoringOtherApps: true)
         target?.makeKeyAndOrderFront(nil)
         SelectionOverlayController.current = self
+
+        installEscapeHatch()
+
+        // Safety net: if activation didn't take (accessory apps can silently fail
+        // to become active), re-assert so Esc / drag land on a real key window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, !self.finished,
+                  !self.windows.contains(where: { $0.isKeyWindow }) else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            target?.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// App-wide Esc / right-click cancel that works even if NO overlay window
+    /// managed to become key — the window server delivers these to our monitors
+    /// regardless of key state, so the overlay can never trap the desktop.
+    private func installEscapeHatch() {
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .rightMouseDown || event.keyCode == 53 { // 53 = Esc
+                self.finish(with: nil)
+                return nil
+            }
+            return event
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return }
+            if event.type == .rightMouseDown || event.keyCode == 53 {
+                self.finish(with: nil)
+            }
+        }
     }
 
     private func finish(with result: SelectionResult?) {
+        guard !finished else { return }   // never fire the completion twice
+        finished = true
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        localMonitor = nil
+        globalMonitor = nil
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
-        SelectionOverlayController.current = nil
+        NSCursor.arrow.set()
+        if SelectionOverlayController.current === self { SelectionOverlayController.current = nil }
         completion(result)
     }
 }
@@ -86,6 +127,13 @@ private final class SelectionView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var acceptsFirstResponder: Bool { true }
+
+    // The overlay appears while our accessory app is inactive (a global hotkey
+    // fired it). Without this, the first click is swallowed just to activate the
+    // app and never starts a drag or a right-click cancel — which is exactly how
+    // the overlay used to trap the desktop. Accept the first mouse so every click
+    // registers immediately.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

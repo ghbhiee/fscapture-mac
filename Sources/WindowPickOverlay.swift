@@ -15,6 +15,9 @@ final class WindowPickOverlayController {
 
     private var windows: [PickWindow] = []
     private let completion: (PickableWindow?) -> Void
+    private var finished = false
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
 
     init(completion: @escaping (PickableWindow?) -> Void) {
         self.completion = completion
@@ -30,12 +33,36 @@ final class WindowPickOverlayController {
         NSApp.activate(ignoringOtherApps: true)
         target?.makeKeyAndOrderFront(nil)
         WindowPickOverlayController.current = self
+
+        // App-wide Esc / right-click cancel so the overlay can never trap the desktop,
+        // even if no window became key.
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .rightMouseDown]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .rightMouseDown || event.keyCode == 53 { self.finish(with: nil); return nil }
+            return event
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .rightMouseDown]) { [weak self] event in
+            if event.type == .rightMouseDown || event.keyCode == 53 { self?.finish(with: nil) }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, !self.finished,
+                  !self.windows.contains(where: { $0.isKeyWindow }) else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            target?.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func finish(with result: PickableWindow?) {
+        guard !finished else { return }
+        finished = true
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        if let globalMonitor { NSEvent.removeMonitor(globalMonitor) }
+        localMonitor = nil
+        globalMonitor = nil
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
-        WindowPickOverlayController.current = nil
+        NSCursor.arrow.set()
+        if WindowPickOverlayController.current === self { WindowPickOverlayController.current = nil }
         completion(result)
     }
 
@@ -131,6 +158,10 @@ private final class PickView: NSView {
     required init?(coder: NSCoder) { fatalError() }
 
     override var acceptsFirstResponder: Bool { true }
+
+    // See SelectionView: accept the first mouse so clicks register even while our
+    // accessory app is still inactive.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

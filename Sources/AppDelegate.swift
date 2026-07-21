@@ -95,18 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
 
-        if NSScreen.screens.count > 1 {
-            menu.addItem(.separator())
-            for (i, screen) in NSScreen.screens.enumerated() {
-                let item = NSMenuItem(title: Loc.t("捕获显示器 \(i + 1) (\(Int(screen.frame.width))×\(Int(screen.frame.height)))",
-                                                   "Capture Display \(i + 1) (\(Int(screen.frame.width))×\(Int(screen.frame.height)))"),
-                                      action: #selector(captureDisplay(_:)), keyEquivalent: "")
-                item.target = self
-                item.tag = i
-                menu.addItem(item)
-            }
-        }
-
         menu.addItem(.separator())
         // Import from Clipboard — show its ⌥V shortcut hint (it's an app-local
         // menu key equivalent, not a global hotkey, so we render the hint here).
@@ -140,15 +128,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let tool = ScreenTool(rawValue: sender.tag) else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             CaptureController.shared.runTool(tool)
-        }
-    }
-
-    @objc private func captureDisplay(_ sender: NSMenuItem) {
-        let screens = NSScreen.screens
-        guard sender.tag < screens.count else { return }
-        let screen = screens[sender.tag]
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            CaptureController.shared.captureDisplay(screen)
         }
     }
 

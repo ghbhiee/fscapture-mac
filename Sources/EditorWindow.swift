@@ -108,9 +108,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Editor
         tabBar.spacing = 2
         tabBar.alignment = .centerY
         tabBar.edgeInsets = NSEdgeInsets(top: 3, left: 8, bottom: 3, right: 8)
-        // Distinct background so the tab row reads apart from the tool strip.
+        // Same background as the tool strip / title bar (inherits the window
+        // background) — the tab row and toolbar read as one cohesive strip,
+        // separated only by the hairline below.
         tabBar.wantsLayer = true
-        tabBar.layer?.backgroundColor = NSColor.underPageBackgroundColor.cgColor
+        tabBar.layer?.backgroundColor = NSColor.clear.cgColor
 
         buildToolStrip()
 
@@ -304,24 +306,27 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Editor
         tabBar.addArrangedSubview(NSView())   // trailing spacer
     }
 
-    /// A single tab: a rounded "card" that is filled + bordered when active so
-    /// the current document is obvious, with an inline × close control.
+    /// A single tab: the active document sits in a neutral filled "card"
+    /// (no colored text — a subtle raised chip against the flat tab strip),
+    /// inactive tabs are flat with dimmed labels. Each has an inline × control.
     private func makeTab(index: Int, doc: EditorDocument, active: Bool) -> NSView {
         let card = NSView()
         card.wantsLayer = true
         card.layer?.cornerRadius = 6
+        // Neutral selection fill (the same gray macOS uses for a selected row in
+        // an unfocused list) — reads as "current" without any blue.
         card.layer?.backgroundColor = active
-            ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
+            ? NSColor.unemphasizedSelectedContentBackgroundColor.cgColor
             : NSColor.clear.cgColor
-        card.layer?.borderWidth = active ? 1 : 0
-        card.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.55).cgColor
+        card.layer?.borderWidth = active ? 0.5 : 0
+        card.layer?.borderColor = NSColor.separatorColor.cgColor
 
         let label = NSButton(title: (doc.isDirty ? "● " : "") + doc.displayName,
                              target: self, action: #selector(tabClicked(_:)))
         label.tag = index
         label.isBordered = false
         label.font = .systemFont(ofSize: 11, weight: active ? .semibold : .regular)
-        label.contentTintColor = active ? .controlAccentColor : .labelColor
+        label.contentTintColor = active ? .labelColor : .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
