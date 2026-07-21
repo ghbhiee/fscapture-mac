@@ -133,6 +133,7 @@ final class Settings {
             "hotkey.\(CaptureAction.scrolling.rawValue)": KeyCombo(keyCode: 2, carbonModifiers: 768).stringValue,   // ⌘⇧D
             "hotkey.\(CaptureAction.rectangleClipboard.rawValue)": KeyCombo(keyCode: 1, carbonModifiers: 2560).stringValue, // ⌥⇧S
             "hotkey.\(CaptureAction.importClipboard.rawValue)": KeyCombo(keyCode: 9, carbonModifiers: 2048).stringValue,    // ⌥V
+            "hotkey.\(CaptureAction.pinToScreen.rawValue)": KeyCombo(keyCode: 2, carbonModifiers: 2560).stringValue,      // ⌥⇧D
         ])
     }
 

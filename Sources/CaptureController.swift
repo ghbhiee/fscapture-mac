@@ -101,13 +101,14 @@ final class CaptureController {
         case .captureText:
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .rectangle) { result in
-                    done()
-                    guard case let .rect(rect, screen)? = result else { return }
+                    guard case let .rect(rect, screen)? = result else { done(); return }
                     Task { @MainActor in
                         do {
                             let image = try await ScreenshotEngine.captureRect(rect, on: screen)
+                            done()   // restore panel only AFTER the capture
                             OCRTool.recognize(image)
                         } catch {
+                            done()
                             OutputRouter.notifyHUD(Loc.t("截图失败：\(error.localizedDescription)", "Capture failed: \(error.localizedDescription)"))
                         }
                     }
@@ -116,13 +117,14 @@ final class CaptureController {
         case .pinToScreen:
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .rectangle) { result in
-                    done()
-                    guard case let .rect(rect, screen)? = result else { return }
+                    guard case let .rect(rect, screen)? = result else { done(); return }
                     Task { @MainActor in
                         do {
                             let image = try await ScreenshotEngine.captureRect(rect, on: screen)
+                            done()   // restore panel only AFTER the capture
                             PinWindow.show(image: image, at: rect)
                         } catch {
+                            done()
                             OutputRouter.notifyHUD(Loc.t("截图失败：\(error.localizedDescription)", "Capture failed: \(error.localizedDescription)"))
                         }
                     }

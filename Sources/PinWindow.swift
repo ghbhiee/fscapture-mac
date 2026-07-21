@@ -53,15 +53,36 @@ final class PinWindow: NSWindow {
 
     private final class PinView: NSView {
         let image: CGImage
+        private let closeButton = NSButton()
         init(image: CGImage) {
             self.image = image
             super.init(frame: .zero)
             wantsLayer = true
             layer?.borderWidth = 1
             layer?.borderColor = NSColor.systemOrange.withAlphaComponent(0.9).cgColor
+
+            // Close (×) button in the top-right corner.
+            closeButton.title = "✕"
+            closeButton.isBordered = false
+            closeButton.font = .systemFont(ofSize: 11, weight: .bold)
+            closeButton.contentTintColor = .white
+            closeButton.wantsLayer = true
+            closeButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+            closeButton.layer?.cornerRadius = 9
+            closeButton.target = self
+            closeButton.action = #selector(closeTapped)
+            addSubview(closeButton)
         }
         required init?(coder: NSCoder) { fatalError() }
         override var acceptsFirstResponder: Bool { true }
+
+        override func layout() {
+            super.layout()
+            let s: CGFloat = 18   // top-right (view is bottom-left origin)
+            closeButton.frame = CGRect(x: bounds.maxX - s - 4, y: bounds.maxY - s - 4, width: s, height: s)
+        }
+
+        @objc private func closeTapped() { (window as? PinWindow)?.closePin() }
 
         override func draw(_ dirtyRect: NSRect) {
             NSImage(cgImage: image, size: bounds.size).draw(in: bounds)

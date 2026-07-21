@@ -53,6 +53,18 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Section(Loc.t("关于", "About")) {
+                LabeledContent(Loc.t("作者", "Author"), value: "guohongbo")
+                LabeledContent(Loc.t("邮箱", "Email"), value: "ghbhiee@gmail.com")
+                LabeledContent("GitHub") {
+                    Link("github.com/ghbhiee/fscapture-mac",
+                         destination: URL(string: "https://github.com/ghbhiee/fscapture-mac")!)
+                }
+                Button(Loc.t("发送反馈（问题 / 需求）…", "Send Feedback (Bug / Idea)…")) {
+                    Feedback.present()
+                }
+            }
         }
         .formStyle(.grouped)
         .padding()

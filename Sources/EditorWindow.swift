@@ -11,6 +11,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Editor
     private var currentIndex = -1
 
     private let tabBar = NSStackView()
+    private let tabSeparator = NSBox()
     private let toolStrip = NSStackView()
     private let canvas = EditorCanvasView()
     private let scrollView = NSScrollView()
@@ -143,7 +144,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Editor
             statusBar.heightAnchor.constraint(equalToConstant: 22),
         ])
 
-        let root = NSStackView(views: [tabBar, toolStrip, scrollView, statusBar])
+        tabSeparator.boxType = .separator   // hairline between tabs and the tool strip
+
+        let root = NSStackView(views: [tabBar, tabSeparator, toolStrip, scrollView, statusBar])
         root.orientation = .vertical
         root.spacing = 0
         root.distribution = .fill
@@ -291,24 +294,56 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Editor
     private func refreshTabBar() {
         // Only show the tab row when there's more than one document (a lone tab
         // needs no chrome).
-        tabBar.isHidden = documents.count <= 1
+        let show = documents.count > 1
+        tabBar.isHidden = !show
+        tabSeparator.isHidden = !show
         for v in tabBar.arrangedSubviews { v.removeFromSuperview() }
         for (i, doc) in documents.enumerated() {
-            let title = (doc.isDirty ? "● " : "") + doc.displayName
-            let btn = NSButton(title: title, target: self, action: #selector(tabClicked(_:)))
-            btn.tag = i
-            btn.bezelStyle = .texturedRounded
-            btn.state = i == currentIndex ? .on : .off
-            btn.font = .systemFont(ofSize: 11, weight: i == currentIndex ? .semibold : .regular)
-            btn.contentTintColor = i == currentIndex ? .controlAccentColor : .secondaryLabelColor
-            tabBar.addArrangedSubview(btn)
-            let close = NSButton(title: "×", target: self, action: #selector(tabCloseClicked(_:)))
-            close.tag = i
-            close.isBordered = false
-            close.font = .systemFont(ofSize: 11)
-            tabBar.addArrangedSubview(close)
+            tabBar.addArrangedSubview(makeTab(index: i, doc: doc, active: i == currentIndex))
         }
-        tabBar.addArrangedSubview(NSView())
+        tabBar.addArrangedSubview(NSView())   // trailing spacer
+    }
+
+    /// A single tab: a rounded "card" that is filled + bordered when active so
+    /// the current document is obvious, with an inline × close control.
+    private func makeTab(index: Int, doc: EditorDocument, active: Bool) -> NSView {
+        let card = NSView()
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 6
+        card.layer?.backgroundColor = active
+            ? NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
+            : NSColor.clear.cgColor
+        card.layer?.borderWidth = active ? 1 : 0
+        card.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.55).cgColor
+
+        let label = NSButton(title: (doc.isDirty ? "● " : "") + doc.displayName,
+                             target: self, action: #selector(tabClicked(_:)))
+        label.tag = index
+        label.isBordered = false
+        label.font = .systemFont(ofSize: 11, weight: active ? .semibold : .regular)
+        label.contentTintColor = active ? .controlAccentColor : .labelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let close = NSButton(title: "×", target: self, action: #selector(tabCloseClicked(_:)))
+        close.tag = index
+        close.isBordered = false
+        close.font = .systemFont(ofSize: 13, weight: .medium)
+        close.contentTintColor = .tertiaryLabelColor
+        close.translatesAutoresizingMaskIntoConstraints = false
+
+        card.addSubview(label)
+        card.addSubview(close)
+        NSLayoutConstraint.activate([
+            card.heightAnchor.constraint(equalToConstant: 24),
+            label.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 9),
+            label.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            close.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 1),
+            close.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -6),
+            close.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            close.widthAnchor.constraint(equalToConstant: 16),
+        ])
+        return card
     }
 
     @objc private func tabClicked(_ sender: NSButton) { selectTab(sender.tag) }

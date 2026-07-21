@@ -60,6 +60,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let toggle = NSMenuItem(title: Loc.t("显示/隐藏捕获面板", "Show / Hide Capture Panel"), action: #selector(togglePanel(_:)), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
+        // Show Editor sits right below the panel toggle (user request).
+        let editorTop = NSMenuItem(title: Loc.t("显示编辑器", "Show Editor"), action: #selector(showEditor(_:)), keyEquivalent: "")
+        editorTop.target = self
+        menu.addItem(editorTop)
         menu.addItem(.separator())
 
         // Explicit status-menu order: rectangleClipboard sits right after rectangle.
@@ -104,10 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
-        let editorItem = NSMenuItem(title: Loc.t("显示编辑器", "Show Editor"), action: #selector(showEditor(_:)), keyEquivalent: "")
-        editorItem.target = self
-        menu.addItem(editorItem)
-        let importItem = NSMenuItem(title: Loc.t("从剪贴板导入", "Import from Clipboard"), action: #selector(importClipboard(_:)), keyEquivalent: "")
+        // Import from Clipboard — show its ⌥V shortcut hint (it's an app-local
+        // menu key equivalent, not a global hotkey, so we render the hint here).
+        let importItem = NSMenuItem(title: Loc.t("从剪贴板导入   ⌥V", "Import from Clipboard   ⌥V"),
+                                    action: #selector(importClipboard(_:)), keyEquivalent: "")
         importItem.target = self
         menu.addItem(importItem)
         let settings = NSMenuItem(title: Loc.t("设置…", "Settings…"), action: #selector(openSettings(_:)), keyEquivalent: "")
