@@ -126,6 +126,7 @@ final class Settings {
             "fixedSizeWidth": 800,
             "fixedSizeHeight": 600,
             "fullScreenAllDisplays": false,
+            "showPanelOnLaunch": false,
             // Default hotkeys (user decision): ⌘⇧S = rectangle, ⌘⇧D = scrolling,
             // ⌥⇧S = rectangle→clipboard, ⌥V = import from clipboard.
             // Carbon modifier bits: cmd=256 shift=512 option=2048 control=4096.
@@ -150,6 +151,14 @@ final class Settings {
     var includePointer: Bool {
         get { d.bool(forKey: "includePointer") }
         set { d.set(newValue, forKey: "includePointer") }
+    }
+
+    /// Show the floating capture panel automatically when the app launches.
+    /// Off by default — the app lives in the menu bar; the panel is opened on
+    /// demand via the status menu or a hotkey.
+    var showPanelOnLaunch: Bool {
+        get { d.bool(forKey: "showPanelOnLaunch") }
+        set { d.set(newValue, forKey: "showPanelOnLaunch") }
     }
 
     var autoSaveCopyToClipboard: Bool {

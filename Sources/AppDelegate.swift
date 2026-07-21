@@ -12,12 +12,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = CapturePanelController()
         panelController = panel
         CaptureController.shared.panelToHide = panel.panel
-        panel.show()
+        // The panel stays hidden on launch unless the user opts in — the app
+        // lives in the menu bar and the panel is opened on demand.
+        if Settings.shared.showPanelOnLaunch { panel.show() }
 
         HotkeyManager.shared.onAction = { action in
             CaptureController.shared.perform(action)
         }
         HotkeyManager.shared.reloadFromSettings()
+        installImportClipboardMonitor()
 
         // Refresh panel tooltips whenever hotkeys change.
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification,
@@ -135,6 +138,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         EditorWindowController.openFromClipboard()
     }
 
+    /// App-local ⌥V = import from clipboard. Handled via a local event monitor
+    /// rather than a menu key equivalent because an ⌥-letter equivalent emits the
+    /// "√" glyph and NSMenu can silently fail to match it. A local monitor only
+    /// fires while FSCapture is the active app, so ⌥V stays app-local (not global),
+    /// exactly as intended.
+    private func installImportClipboardMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard mods == .option,
+                  event.charactersIgnoringModifiers?.lowercased() == "v" else { return event }
+            // Don't hijack ⌥V while the user is typing into a text field/editor.
+            if let responder = NSApp.keyWindow?.firstResponder,
+               responder is NSText || responder is NSTextView { return event }
+            EditorWindowController.openFromClipboard()
+            return nil   // consume
+        }
+    }
+
     @objc private func showEditor(_ sender: Any?) { EditorWindowController.shared.present() }
     @objc private func openSettings(_ sender: Any?) { SettingsWindowController.show() }
     @objc private func quit(_ sender: Any?) { NSApp.terminate(nil) }
@@ -209,11 +230,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: Loc.t("复制", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: Loc.t("粘贴", "Paste"),
                          action: #selector(EditorWindowController.pasteAction(_:)), keyEquivalent: "v")
-        // ⌥V import-from-clipboard is APP-LOCAL (only when FSCapture is focused),
-        // so it's a menu key equivalent rather than a global hotkey.
-        let importItem = NSMenuItem(title: Loc.t("从剪贴板导入 → 新标签页", "Import from Clipboard → New Tab"),
-                                    action: #selector(importClipboard(_:)), keyEquivalent: "v")
-        importItem.keyEquivalentModifierMask = [.option]
+        // ⌥V import-from-clipboard is APP-LOCAL. The actual ⌥V is handled by a
+        // local event monitor (installImportClipboardMonitor) — an ⌥-letter menu
+        // key equivalent is unreliable (⌥V emits "√"), so we show the combo only
+        // as a hint in the title and leave this item as a clickable command.
+        let importItem = NSMenuItem(title: Loc.t("从剪贴板导入 → 新标签页   ⌥V", "Import from Clipboard → New Tab   ⌥V"),
+                                    action: #selector(importClipboard(_:)), keyEquivalent: "")
         importItem.target = self
         editMenu.addItem(importItem)
         editMenu.addItem(withTitle: Loc.t("删除", "Delete"),

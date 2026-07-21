@@ -96,6 +96,7 @@ struct CaptureSettingsView: View {
     @State private var destination = Settings.shared.destination
     @State private var editorAlsoClip = Settings.shared.editorAlsoCopyToClipboard
     @State private var allDisplays = Settings.shared.fullScreenAllDisplays
+    @State private var showPanelOnLaunch = Settings.shared.showPanelOnLaunch
     @State private var fixedW = Int(Settings.shared.fixedSize.width)
     @State private var fixedH = Int(Settings.shared.fixedSize.height)
 
@@ -105,6 +106,9 @@ struct CaptureSettingsView: View {
                 ForEach(OutputDestination.allCases, id: \.self) { Text($0.label) }
             }
             .onChange(of: destination) { _, v in Settings.shared.destination = v }
+
+            Toggle(Loc.t("启动时显示捕获面板", "Show capture panel on launch"), isOn: $showPanelOnLaunch)
+                .onChange(of: showPanelOnLaunch) { _, v in Settings.shared.showPanelOnLaunch = v }
 
             Toggle(Loc.t("捕获后先在预览窗中确认", "Confirm in preview window after capture"), isOn: $previewEnabled)
                 .onChange(of: previewEnabled) { _, v in Settings.shared.previewEnabled = v }
