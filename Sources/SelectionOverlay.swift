@@ -22,7 +22,6 @@ final class SelectionOverlayController {
     private var windows: [OverlayWindow] = []
     private let completion: (SelectionResult?) -> Void
     private var finished = false
-    private var pushedCursor = false
     private var localMonitor: Any?
     private var globalMonitor: Any?
 
@@ -38,15 +37,9 @@ final class SelectionOverlayController {
         // Key window = the one under the mouse, so keystrokes land somewhere useful.
         let mouse = NSEvent.mouseLocation
         let target = windows.first { $0.screen?.frame.contains(mouse) ?? false } ?? windows.first
-        NSApp.activate(ignoringOtherApps: true)
+        Self.forceActivate()
         target?.makeKeyAndOrderFront(nil)
         SelectionOverlayController.current = self
-
-        // Push the crosshair exactly once so finish() can pop it back. Setting it
-        // per-view left the crosshair stuck on screen after the overlay closed,
-        // because nothing ever restored the previous cursor.
-        NSCursor.crosshair.push()
-        pushedCursor = true
 
         installEscapeHatch()
 
@@ -55,28 +48,64 @@ final class SelectionOverlayController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, !self.finished,
                   !self.windows.contains(where: { $0.isKeyWindow }) else { return }
-            NSApp.activate(ignoringOtherApps: true)
+            Self.forceActivate()
             target?.makeKeyAndOrderFront(nil)
         }
+    }
+
+    /// Bring this accessory app forward as forcefully as the OS allows.
+    ///
+    /// Under macOS's cooperative activation, `NSApp.activate` alone often does
+    /// NOT take for a background agent. When it fails the overlay gets no
+    /// mouseMoved and no key window — which is how the crosshair guides froze in
+    /// place and Esc stopped working. Going through NSRunningApplication as well
+    /// is markedly more reliable.
+    private static func forceActivate() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
     }
 
     /// App-wide Esc / right-click cancel that works even if NO overlay window
     /// managed to become key — the window server delivers these to our monitors
     /// regardless of key state, so the overlay can never trap the desktop.
     private func installEscapeHatch() {
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .rightMouseDown]) { [weak self] event in
+        let mask: NSEvent.EventTypeMask = [.keyDown, .rightMouseDown, .mouseMoved, .leftMouseDragged]
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self else { return event }
-            if event.type == .rightMouseDown || event.keyCode == 53 { // 53 = Esc
+            switch event.type {
+            case .mouseMoved, .leftMouseDragged:
+                self.syncPointer()
+                return event
+            case .rightMouseDown:
                 self.finish(with: nil)
                 return nil
-            }
-            return event
-        }
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown, .rightMouseDown]) { [weak self] event in
-            guard let self else { return }
-            if event.type == .rightMouseDown || event.keyCode == 53 {
+            case .keyDown where event.keyCode == 53:   // Esc
                 self.finish(with: nil)
+                return nil
+            default:
+                return event
             }
+        }
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self else { return }
+            switch event.type {
+            case .mouseMoved, .leftMouseDragged: self.syncPointer()
+            case .rightMouseDown: self.finish(with: nil)
+            case .keyDown where event.keyCode == 53: self.finish(with: nil)
+            default: break
+            }
+        }
+    }
+
+    /// Push the current pointer position to EVERY display's overlay.
+    ///
+    /// `mouseMoved` is only delivered to the view under the pointer, so the other
+    /// displays kept their initial position and drew a crosshair frozen in place
+    /// — the user saw one motionless crosshair plus the live one.
+    private func syncPointer() {
+        let global = NSEvent.mouseLocation
+        for window in windows {
+            (window.contentView as? SelectionView)?.updatePointer(global)
         }
     }
 
@@ -89,16 +118,7 @@ final class SelectionOverlayController {
         globalMonitor = nil
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
-        // Restore the cursor: pop our pushed crosshair, then force it back to the
-        // arrow on the next turn of the run loop. Without the deferred set the
-        // crosshair can linger until the pointer next crosses a cursor rect,
-        // because the window that owned it is already gone.
-        if pushedCursor {
-            NSCursor.pop()
-            pushedCursor = false
-        }
         NSCursor.arrow.set()
-        DispatchQueue.main.async { NSCursor.arrow.set() }
         if SelectionOverlayController.current === self { SelectionOverlayController.current = nil }
         completion(result)
     }
@@ -130,6 +150,9 @@ private final class SelectionView: NSView {
     private var dragCurrent: CGPoint?
     private var pathPoints: [CGPoint] = []   // view coords
     private var mousePos: CGPoint = .zero
+    /// Whether the pointer is on THIS display — only that overlay draws the
+    /// crosshair guides, so other displays don't show a frozen second crosshair.
+    private var pointerOnThisScreen = false
     private var trackingArea: NSTrackingArea?
 
     init(screen: NSScreen, mode: SelectionMode, onDone: @escaping (SelectionResult?) -> Void) {
@@ -154,10 +177,23 @@ private final class SelectionView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.makeFirstResponder(self)
-        mousePos = convertGlobal(NSEvent.mouseLocation)
+        updatePointer(NSEvent.mouseLocation)
         updateTracking()
-        // The crosshair is pushed once by the controller (one view per display,
-        // so setting it here would be unbalanced and leave it stuck afterwards).
+    }
+
+    /// Sync to a global pointer position (driven by the controller so that every
+    /// display stays current, not just the one receiving mouseMoved).
+    func updatePointer(_ global: CGPoint) {
+        mousePos = convertGlobal(global)
+        pointerOnThisScreen = overlayScreen.frame.contains(global)
+        needsDisplay = true
+    }
+
+    /// Cursor rects let AppKit own the crosshair: it restores the previous cursor
+    /// automatically when the window goes away. Setting/pushing it manually left
+    /// the crosshair stuck on screen after the overlay closed.
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .crosshair)
     }
 
     override func updateTrackingAreas() {
@@ -168,13 +204,12 @@ private final class SelectionView: NSView {
     private func updateTracking() {
         if let t = trackingArea { removeTrackingArea(t) }
         let t = NSTrackingArea(rect: bounds,
-                               options: [.mouseMoved, .activeAlways, .cursorUpdate],
+                               options: [.mouseMoved, .activeAlways],
                                owner: self, userInfo: nil)
         addTrackingArea(t)
         trackingArea = t
+        window?.invalidateCursorRects(for: self)
     }
-
-    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
 
     /// Cocoa global -> view coords (window covers whole screen, so this is a translation).
     private func convertGlobal(_ p: CGPoint) -> CGPoint {
@@ -243,6 +278,7 @@ private final class SelectionView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         mousePos = convert(event.locationInWindow, from: nil)
+        pointerOnThisScreen = true
         needsDisplay = true
     }
 
@@ -283,7 +319,8 @@ private final class SelectionView: NSView {
         case .rectangle:
             if let s = dragStart, let c = dragCurrent { cutout = normalizedRect(s, c) }
         case .fixedSize(let size):
-            cutout = fixedRect(at: mousePos, size: size)
+            // Same as the guides: only the display under the pointer shows the frame.
+            if pointerOnThisScreen { cutout = fixedRect(at: mousePos, size: size) }
         case .freehand:
             if pathPoints.count > 1 {
                 let p = NSBezierPath()
@@ -311,8 +348,10 @@ private final class SelectionView: NSView {
             NSColor.systemRed.setStroke()
             strokePath.lineWidth = 2
             strokePath.stroke()
-        } else {
-            // Idle: crosshair guide lines through the mouse.
+        } else if pointerOnThisScreen {
+            // Idle: crosshair guide lines through the mouse. Drawn ONLY on the
+            // display holding the pointer — otherwise every other display shows
+            // a second crosshair frozen wherever the pointer happened to start.
             NSColor.white.withAlphaComponent(0.6).setStroke()
             let guide = NSBezierPath()
             guide.move(to: CGPoint(x: mousePos.x, y: bounds.minY))
