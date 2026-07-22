@@ -34,12 +34,30 @@ enum ScreenshotEngine {
 
     private static func scale(for screen: NSScreen) -> CGFloat { screen.backingScaleFactor }
 
+    /// Flush our own windows' backing stores before compositing a screenshot.
+    ///
+    /// Our windows are drawn by this very process, and layer-backed content (the
+    /// SwiftUI settings window in particular) can still have an uncommitted
+    /// CoreAnimation transaction when the capture composites — which is one way
+    /// our own windows end up blank in a shot. Forcing a draw + commit is cheap
+    /// insurance; deliberately no long sleep here, so captures stay responsive.
+    private static func settleBeforeCapture() async {
+        await MainActor.run {
+            for window in NSApp.windows where window.isVisible {
+                window.displayIfNeeded()
+            }
+            CATransaction.flush()
+        }
+        try? await Task.sleep(nanoseconds: 30_000_000)
+    }
+
     static func displayID(of screen: NSScreen) -> CGDirectDisplayID {
         (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 
     /// Full capture of one screen, own windows excluded. Returns a CGImage in pixels.
     static func captureDisplay(screen: NSScreen) async throws -> CGImage {
+        await settleBeforeCapture()
         let content = try await shareableContent()
         let displayID = displayID(of: screen)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
@@ -108,6 +126,7 @@ enum ScreenshotEngine {
 
     /// Capture a single window by CGWindowID via desktop-independent filter.
     static func captureWindow(windowID: CGWindowID) async throws -> CGImage {
+        await settleBeforeCapture()
         let content = try await shareableContent()
         guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
             throw CaptureError.windowNotFound

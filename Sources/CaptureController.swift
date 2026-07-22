@@ -28,12 +28,13 @@ final class CaptureController {
             let prevApp = NSWorkspace.shared.frontmostApplication
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .rectangle) { result in
-                    done()
                     guard case let .rect(rect, screen)? = result else {
+                        done()
                         prevApp?.activate()
                         return
                     }
                     Task { @MainActor in
+                        defer { done() }   // restore the panel only after the capture
                         do {
                             let image = try await ScreenshotEngine.captureRect(rect, on: screen)
                             OutputRouter.copyToClipboard(image)
@@ -48,27 +49,26 @@ final class CaptureController {
         case .importClipboard:
             break  // handled above
         case .rectangle:
+            // NB: restore the panel only AFTER the capture (finish(after:)),
+            // otherwise it pops back into frame and lands in the screenshot.
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .rectangle) { result in
-                    done()
-                    guard case let .rect(rect, screen)? = result else { return }
-                    self.finish { try await ScreenshotEngine.captureRect(rect, on: screen) }
+                    guard case let .rect(rect, screen)? = result else { done(); return }
+                    self.finish(after: done) { try await ScreenshotEngine.captureRect(rect, on: screen) }
                 }
             }
         case .freehand:
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .freehand) { result in
-                    done()
-                    guard case let .path(points, screen)? = result else { return }
-                    self.finish { try await ScreenshotEngine.captureFreehand(path: points, on: screen) }
+                    guard case let .path(points, screen)? = result else { done(); return }
+                    self.finish(after: done) { try await ScreenshotEngine.captureFreehand(path: points, on: screen) }
                 }
             }
         case .fixedSize:
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .fixedSize(Settings.shared.fixedSize)) { result in
-                    done()
-                    guard case let .rect(rect, screen)? = result else { return }
-                    self.finish { try await ScreenshotEngine.captureRect(rect, on: screen) }
+                    guard case let .rect(rect, screen)? = result else { done(); return }
+                    self.finish(after: done) { try await ScreenshotEngine.captureRect(rect, on: screen) }
                 }
             }
         case .fullScreen:
@@ -93,9 +93,8 @@ final class CaptureController {
         case .windowObject:
             withHiddenPanel { done in
                 _ = WindowPickOverlayController { picked in
-                    done()
-                    guard let picked else { return }
-                    self.finish { try await ScreenshotEngine.captureWindow(windowID: picked.windowID) }
+                    guard let picked else { done(); return }
+                    self.finish(after: done) { try await ScreenshotEngine.captureWindow(windowID: picked.windowID) }
                 }
             }
         case .captureText:

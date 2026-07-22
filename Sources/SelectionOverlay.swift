@@ -22,6 +22,7 @@ final class SelectionOverlayController {
     private var windows: [OverlayWindow] = []
     private let completion: (SelectionResult?) -> Void
     private var finished = false
+    private var pushedCursor = false
     private var localMonitor: Any?
     private var globalMonitor: Any?
 
@@ -40,6 +41,12 @@ final class SelectionOverlayController {
         NSApp.activate(ignoringOtherApps: true)
         target?.makeKeyAndOrderFront(nil)
         SelectionOverlayController.current = self
+
+        // Push the crosshair exactly once so finish() can pop it back. Setting it
+        // per-view left the crosshair stuck on screen after the overlay closed,
+        // because nothing ever restored the previous cursor.
+        NSCursor.crosshair.push()
+        pushedCursor = true
 
         installEscapeHatch()
 
@@ -82,7 +89,16 @@ final class SelectionOverlayController {
         globalMonitor = nil
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
+        // Restore the cursor: pop our pushed crosshair, then force it back to the
+        // arrow on the next turn of the run loop. Without the deferred set the
+        // crosshair can linger until the pointer next crosses a cursor rect,
+        // because the window that owned it is already gone.
+        if pushedCursor {
+            NSCursor.pop()
+            pushedCursor = false
+        }
         NSCursor.arrow.set()
+        DispatchQueue.main.async { NSCursor.arrow.set() }
         if SelectionOverlayController.current === self { SelectionOverlayController.current = nil }
         completion(result)
     }
@@ -140,7 +156,8 @@ private final class SelectionView: NSView {
         window?.makeFirstResponder(self)
         mousePos = convertGlobal(NSEvent.mouseLocation)
         updateTracking()
-        NSCursor.crosshair.set()
+        // The crosshair is pushed once by the controller (one view per display,
+        // so setting it here would be unbalanced and leave it stuck afterwards).
     }
 
     override func updateTrackingAreas() {
