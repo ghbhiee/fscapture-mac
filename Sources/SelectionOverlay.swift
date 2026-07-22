@@ -53,16 +53,14 @@ final class SelectionOverlayController {
         }
     }
 
-    /// Bring this accessory app forward as forcefully as the OS allows.
+    /// Activate just enough to own the keyboard, WITHOUT disturbing window order.
     ///
-    /// Under macOS's cooperative activation, `NSApp.activate` alone often does
-    /// NOT take for a background agent. When it fails the overlay gets no
-    /// mouseMoved and no key window — which is how the crosshair guides froze in
-    /// place and Esc stopped working. Going through NSRunningApplication as well
-    /// is markedly more reliable.
+    /// Deliberately no `.activateAllWindows`: that raises every window this app
+    /// owns, which yanked the editor in front of whatever the user was trying to
+    /// capture. Only the overlay is brought forward (by the caller); the editor
+    /// keeps its place so it can still be captured where it sits.
     private static func forceActivate() {
         NSApp.activate(ignoringOtherApps: true)
-        NSRunningApplication.current.activate(options: [.activateAllWindows])
     }
 
     /// App-wide Esc / right-click cancel that works even if NO overlay window
