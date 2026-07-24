@@ -21,11 +21,19 @@ final class CaptureController {
         guard SelectionOverlayController.current == nil,
               WindowPickOverlayController.current == nil else { return }
 
+        // The app the user was in BEFORE we activate for the overlay. Activating
+        // our (accessory) app lifts ALL our windows — including the editor — above
+        // that app, so a full-display capture would show the editor hollowing the
+        // window the user actually wanted. We reactivate this app right before
+        // compositing to put the z-order back to what the user saw. (Window-object
+        // captures are isolated, so they don't need this.)
+        let frontApp = NSWorkspace.shared.frontmostApplication
+
         switch action {
         case .rectangleClipboard:
             // Rect → clipboard should NOT steal focus: capture the frontmost app
             // and hand focus back once we're done (no editor/preview appears).
-            let prevApp = NSWorkspace.shared.frontmostApplication
+            let prevApp = frontApp
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .rectangle) { result in
                     guard case let .rect(rect, screen)? = result else {
@@ -36,6 +44,7 @@ final class CaptureController {
                     Task { @MainActor in
                         defer { done() }   // restore the panel only after the capture
                         do {
+                            await self.restoreFront(prevApp)   // also puts z-order back
                             let image = try await ScreenshotEngine.captureRect(rect, on: screen)
                             OutputRouter.copyToClipboard(image)
                             OutputRouter.notifyHUD(Loc.t("已复制到剪贴板", "Copied to clipboard"))
@@ -54,32 +63,44 @@ final class CaptureController {
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .rectangle) { result in
                     guard case let .rect(rect, screen)? = result else { done(); return }
-                    self.finish(after: done) { try await ScreenshotEngine.captureRect(rect, on: screen) }
+                    self.finish(after: done) {
+                        await self.restoreFront(frontApp)
+                        return try await ScreenshotEngine.captureRect(rect, on: screen)
+                    }
                 }
             }
         case .freehand:
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .freehand) { result in
                     guard case let .path(points, screen)? = result else { done(); return }
-                    self.finish(after: done) { try await ScreenshotEngine.captureFreehand(path: points, on: screen) }
+                    self.finish(after: done) {
+                        await self.restoreFront(frontApp)
+                        return try await ScreenshotEngine.captureFreehand(path: points, on: screen)
+                    }
                 }
             }
         case .fixedSize:
             withHiddenPanel { done in
                 _ = SelectionOverlayController(mode: .fixedSize(Settings.shared.fixedSize)) { result in
                     guard case let .rect(rect, screen)? = result else { done(); return }
-                    self.finish(after: done) { try await ScreenshotEngine.captureRect(rect, on: screen) }
+                    self.finish(after: done) {
+                        await self.restoreFront(frontApp)
+                        return try await ScreenshotEngine.captureRect(rect, on: screen)
+                    }
                 }
             }
         case .fullScreen:
             withHiddenPanel { done in
                 if Settings.shared.fullScreenAllDisplays {
-                    self.finishMulti(screens: NSScreen.screens, done: done)
+                    self.finishMulti(screens: NSScreen.screens, restoring: frontApp, done: done)
                 } else {
                     let mouse = NSEvent.mouseLocation
                     let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
                     guard let screen else { done(); return }
-                    self.finish(after: done) { try await ScreenshotEngine.captureDisplay(screen: screen) }
+                    self.finish(after: done) {
+                        await self.restoreFront(frontApp)
+                        return try await ScreenshotEngine.captureDisplay(screen: screen)
+                    }
                 }
             }
         case .activeWindow:
@@ -103,6 +124,7 @@ final class CaptureController {
                     guard case let .rect(rect, screen)? = result else { done(); return }
                     Task { @MainActor in
                         do {
+                            await self.restoreFront(frontApp)
                             let image = try await ScreenshotEngine.captureRect(rect, on: screen)
                             done()   // restore panel only AFTER the capture
                             OCRTool.recognize(image)
@@ -119,6 +141,7 @@ final class CaptureController {
                     guard case let .rect(rect, screen)? = result else { done(); return }
                     Task { @MainActor in
                         do {
+                            await self.restoreFront(frontApp)
                             let image = try await ScreenshotEngine.captureRect(rect, on: screen)
                             done()   // restore panel only AFTER the capture
                             PinWindow.show(image: image, at: rect)
@@ -157,9 +180,23 @@ final class CaptureController {
         }
     }
 
-    private func finishMulti(screens: [NSScreen], done: @escaping () -> Void) {
+    /// Reactivate the app that was frontmost before we showed the overlay, so the
+    /// screenshot composites in the z-order the user actually saw (our editor is
+    /// no longer floating on top of their window). No-op when that app was us or
+    /// is gone. The short wait lets the window server finish reordering.
+    func restoreFront(_ app: NSRunningApplication?) async {
+        guard let app,
+              app.processIdentifier != NSRunningApplication.current.processIdentifier,
+              !app.isTerminated else { return }
+        app.activate()
+        try? await Task.sleep(nanoseconds: 130_000_000)
+    }
+
+    private func finishMulti(screens: [NSScreen], restoring app: NSRunningApplication? = nil,
+                             done: @escaping () -> Void) {
         Task { @MainActor in
             defer { done() }
+            await self.restoreFront(app)
             for screen in screens {
                 do {
                     let image = try await ScreenshotEngine.captureDisplay(screen: screen)
