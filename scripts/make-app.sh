@@ -33,7 +33,7 @@ if security find-identity -p codesigning -v 2>/dev/null | grep -q "$SIGN_ID"; th
   echo "Signed with stable identity: $SIGN_ID"
 else
   codesign --force --sign - --identifier com.hongbo.fscapture "$APP_DIR"
-  echo "Signed ad-hoc (run scripts/setup-signing.sh once to make TCC grants persist)"
+  echo "Signed ad-hoc (run scripts/setup-signing.sh once to create the shared 'Hongbo Dev' identity so TCC grants persist)"
 fi
 
 echo "Built $(pwd)/$APP_DIR"
