@@ -25,9 +25,9 @@ if [ ! -f Resources/AppIcon.icns ] || [ scripts/make-icon.sh -nt Resources/AppIc
 fi
 cp Resources/AppIcon.icns "$APP_DIR/Contents/Resources/AppIcon.icns"
 
-# Sign with the stable "FSCapture Dev" identity so TCC grants persist
+# Sign with the shared stable "Hongbo Dev" identity so TCC grants persist
 # across rebuilds; fall back to ad-hoc when the cert is missing.
-SIGN_ID="FSCapture Dev"
+SIGN_ID="Hongbo Dev"
 if security find-identity -p codesigning -v 2>/dev/null | grep -q "$SIGN_ID"; then
   codesign --force --deep --sign "$SIGN_ID" --identifier com.hongbo.fscapture "$APP_DIR"
   echo "Signed with stable identity: $SIGN_ID"

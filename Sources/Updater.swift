@@ -4,7 +4,7 @@ import AppKit
 /// small `version.json` from the update host, compares the version to this
 /// build, and — if newer — offers to download a signed .app zip, swap it into
 /// place, and relaunch. No external dependencies; relies on the app being
-/// signed with the stable "FSCapture Dev" identity so TCC grants survive.
+/// signed with the shared stable "Hongbo Dev" identity so TCC grants survive.
 @MainActor
 enum Updater {
     /// Where the version manifest and release zips live.

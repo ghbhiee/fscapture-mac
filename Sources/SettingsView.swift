@@ -56,7 +56,7 @@ struct GeneralSettingsView: View {
 
             Section(Loc.t("关于", "About")) {
                 LabeledContent(Loc.t("作者", "Author"), value: "guohongbo")
-                LabeledContent(Loc.t("邮箱", "Email"), value: "ghbhiee@gmail.com")
+                LabeledContent(Loc.t("邮箱", "Email"), value: "guohongbo@outlook.com")
                 LabeledContent("GitHub") {
                     Link("github.com/ghbhiee/fscapture-mac",
                          destination: URL(string: "https://github.com/ghbhiee/fscapture-mac")!)
